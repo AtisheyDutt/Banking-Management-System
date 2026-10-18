@@ -1,4 +1,4 @@
-server
-client
+/server
+/client
 *.o
 data/*.dat
