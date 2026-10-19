@@ -77,3 +77,35 @@ int db_append(int fd, size_t rec_size, void *rec) {
     fcntl(fd, F_SETLK, &fl);
     return id;
 }
+
+int db_lock_file(int fd, int type) {
+    struct flock fl;
+    memset(&fl, 0, sizeof fl);
+    fl.l_type   = type;
+    fl.l_whence = SEEK_SET;
+    fl.l_start  = 0;
+    fl.l_len    = 0;                            /* 0 = whole file, including future growth */
+    while (fcntl(fd, F_SETLKW, &fl) == -1) {
+        if (errno != EINTR) return -1;
+    }
+    return 0;
+}
+
+int db_unlock_file(int fd) {
+    struct flock fl;
+    memset(&fl, 0, sizeof fl);
+    fl.l_type   = F_UNLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start  = 0;
+    fl.l_len    = 0;
+    return fcntl(fd, F_SETLK, &fl);
+}
+
+int db_append_nolock(int fd, size_t rec_size, void *rec) {
+    int count = db_count(fd, rec_size);
+    if (count < 0) return -1;
+    int id = count + 1;
+    *(int *)rec = id;                           /* id is always the first member */
+    if (db_write(fd, id, rec_size, rec) < 0) return -1;
+    return id;
+}
