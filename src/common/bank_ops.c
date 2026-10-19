@@ -53,9 +53,9 @@ static int apply(int account_id, int type, long long amount, long long *new_bala
     if (db_read(fd, account_id, sizeof a, &a) < 0)                         rc = OP_NO_ACCOUNT;
     else if (!a.active)                                                    rc = OP_INACTIVE;
     else if (type == TXN_WITHDRAW && a.balance < amount)                   rc = OP_INSUFFICIENT;
-    else if (type == TXN_DEPOSIT && amount > LLONG_MAX - a.balance)        rc = OP_INVALID_AMOUNT;
+    else if ((type == TXN_DEPOSIT || type == TXN_LOAN_CREDIT) && amount > LLONG_MAX - a.balance)        rc = OP_INVALID_AMOUNT;
     else {
-        a.balance += (type == TXN_DEPOSIT) ? amount : -amount;
+        a.balance += ((type == TXN_DEPOSIT || type == TXN_LOAN_CREDIT)) ? amount : -amount;
         if (db_write(fd, account_id, sizeof a, &a) < 0) rc = OP_ERR;
         else {
             log_txn(account_id, type, amount, a.balance, 0);
@@ -132,4 +132,8 @@ int op_history(int account_id, Transaction *out, int max) {
     }
     db_unlock_file(fd);
     return n;
+}
+
+int op_loan_credit(int account_id, long long amount) {
+    return apply(account_id, TXN_LOAN_CREDIT, amount, NULL);
 }

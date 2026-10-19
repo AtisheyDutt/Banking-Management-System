@@ -22,4 +22,8 @@ int op_transfer(int from_id, int to_id, long long amount);
  * Returns how many were stored, or OP_ERR. */
 int op_history(int account_id, Transaction *out, int max);
 
+
+/* Credit an approved loan to the account (logged as TXN_LOAN_CREDIT). */
+int op_loan_credit(int account_id, long long amount);
+
 #endif
