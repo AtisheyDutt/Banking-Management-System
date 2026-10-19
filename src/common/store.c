@@ -195,3 +195,7 @@ int customer_create(const char *username, const char *password,
     if (a_out) *a_out = a;
     return uid;
 }
+
+int store_accounts_fd(void) {
+    return accounts_fd;
+}

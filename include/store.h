@@ -38,4 +38,8 @@ int customer_create(const char *username, const char *password,
                     const char *full_name, long long opening_balance,
                     User *u_out, Account *a_out);
 
+
+/* Raw descriptor of accounts.dat, used by the money operations in bank_ops.c */
+int store_accounts_fd(void);
+
 #endif
