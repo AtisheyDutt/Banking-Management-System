@@ -64,4 +64,9 @@ int user_set_active(int user_id, int active);
  * NOTE: the structs include passwords, so never send them to a client. */
 int user_list_by_role(int role, User *out, int max);
 
+
+/* Server start-up: mark every user as logged out. */
+void store_reset_sessions(void);
+
+
 #endif

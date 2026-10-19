@@ -303,3 +303,18 @@ int user_list_by_role(int role, User *out, int max) {
     }
     return n;
 }
+
+/* Called once when the server starts: nobody can be logged in yet, so clear
+ * any flags left behind by a crash or a killed server. */
+void store_reset_sessions(void) {
+    if (db_lock_file(users_fd, F_WRLCK) < 0) return;
+    int count = db_count(users_fd, sizeof(User));
+    for (int i = 1; i <= count; i++) {
+        User u;
+        if (db_read(users_fd, i, sizeof u, &u) == 0 && u.logged_in) {
+            u.logged_in = 0;
+            db_write(users_fd, i, sizeof u, &u);
+        }
+    }
+    db_unlock_file(users_fd);
+}

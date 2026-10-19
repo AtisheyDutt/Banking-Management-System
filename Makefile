@@ -1,10 +1,23 @@
-CC = gcc
+.RECIPEPREFIX = >
+CC     = gcc
 CFLAGS = -Wall -Wextra -Iinclude -g
+COMMON = src/common/db.c src/common/store.c src/common/bank_ops.c src/common/services.c src/common/net.c
 
-all: server
+all: bin/server bin/client bin/seed
 
-server: src/server/main.c $(wildcard include/*.h)
-	$(CC) $(CFLAGS) -o server src/server/main.c
+bin/server: src/server/main.c src/server/session.c $(COMMON)
+> mkdir -p bin
+> $(CC) $(CFLAGS) $^ -o $@
+
+bin/client: src/client/main.c src/common/net.c
+> mkdir -p bin
+> $(CC) $(CFLAGS) $^ -o $@
+
+bin/seed: src/server/seed.c $(COMMON)
+> mkdir -p bin
+> $(CC) $(CFLAGS) $^ -o $@
 
 clean:
-	rm -f server
+> rm -rf bin
+
+.PHONY: all clean
