@@ -1,4 +1,7 @@
 /server
 /client
+/test_db
 *.o
 data/*.dat
+tests/test_db
+tests/test_db
