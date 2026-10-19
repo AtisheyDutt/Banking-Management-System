@@ -199,3 +199,107 @@ int customer_create(const char *username, const char *password,
 int store_accounts_fd(void) {
     return accounts_fd;
 }
+
+/* ---------- User management (Step 7) ---------- */
+
+int user_change_password(int user_id, const char *old_pw, const char *new_pw) {
+    if (!old_pw || !new_pw || new_pw[0] == '\0' || strlen(new_pw) >= MAX_PASS_LEN)
+        return STORE_INVALID;
+    if (user_id < 1) return STORE_NOT_FOUND;
+    if (db_lock(users_fd, user_id, sizeof(User), F_WRLCK) < 0) return STORE_ERR;
+
+    User u;
+    int rc;
+    if (db_read(users_fd, user_id, sizeof u, &u) < 0)  rc = STORE_NOT_FOUND;
+    else if (strcmp(u.password, old_pw) != 0)          rc = STORE_BAD_PASSWORD;
+    else {
+        snprintf(u.password, sizeof u.password, "%s", new_pw);
+        rc = (db_write(users_fd, user_id, sizeof u, &u) == 0) ? STORE_OK : STORE_ERR;
+    }
+
+    db_unlock(users_fd, user_id, sizeof(User));
+    return rc;
+}
+
+int user_update_details(int user_id, const char *new_username, const char *new_full_name) {
+    if (user_id < 1) return STORE_NOT_FOUND;
+    if ((new_username  && (new_username[0]  == '\0' || strlen(new_username)  >= MAX_NAME_LEN)) ||
+        (new_full_name && (new_full_name[0] == '\0' || strlen(new_full_name) >= MAX_FULLNAME_LEN)))
+        return STORE_INVALID;
+
+    /* Whole-file lock: "is the new name free?" and "write it" must be one atomic step.
+     * It also means we cannot overwrite a concurrent login's logged_in flag. */
+    if (db_lock_file(users_fd, F_WRLCK) < 0) return STORE_ERR;
+
+    User u;
+    int rc = STORE_OK;
+    if (db_read(users_fd, user_id, sizeof u, &u) < 0) {
+        rc = STORE_NOT_FOUND;
+    } else {
+        if (new_username) {
+            int count = db_count(users_fd, sizeof(User));
+            for (int i = 1; i <= count; i++) {
+                User other;
+                if (i != user_id &&
+                    db_read(users_fd, i, sizeof other, &other) == 0 &&
+                    strcmp(other.username, new_username) == 0) {
+                    rc = STORE_DUPLICATE;
+                    break;
+                }
+            }
+        }
+        if (rc == STORE_OK) {
+            if (new_username)  snprintf(u.username,  sizeof u.username,  "%s", new_username);
+            if (new_full_name) snprintf(u.full_name, sizeof u.full_name, "%s", new_full_name);
+            if (db_write(users_fd, user_id, sizeof u, &u) < 0) rc = STORE_ERR;
+        }
+    }
+
+    db_unlock_file(users_fd);
+    return rc;
+}
+
+int user_set_role(int user_id, int new_role) {
+    if (new_role != ROLE_EMPLOYEE && new_role != ROLE_MANAGER) return STORE_INVALID;
+    if (user_id < 1) return STORE_NOT_FOUND;
+    if (db_lock(users_fd, user_id, sizeof(User), F_WRLCK) < 0) return STORE_ERR;
+
+    User u;
+    int rc;
+    if (db_read(users_fd, user_id, sizeof u, &u) < 0) rc = STORE_NOT_FOUND;
+    else if (u.role != ROLE_EMPLOYEE && u.role != ROLE_MANAGER) rc = STORE_INVALID;
+    else {
+        u.role = new_role;
+        rc = (db_write(users_fd, user_id, sizeof u, &u) == 0) ? STORE_OK : STORE_ERR;
+    }
+
+    db_unlock(users_fd, user_id, sizeof(User));
+    return rc;
+}
+
+int user_set_active(int user_id, int active) {
+    if (user_id < 1) return STORE_NOT_FOUND;
+    if (db_lock(users_fd, user_id, sizeof(User), F_WRLCK) < 0) return STORE_ERR;
+
+    User u;
+    int rc;
+    if (db_read(users_fd, user_id, sizeof u, &u) < 0) rc = STORE_NOT_FOUND;
+    else if (u.role == ROLE_ADMIN && !active)         rc = STORE_INVALID;   /* never lock out the admin */
+    else {
+        u.active = active ? 1 : 0;
+        rc = (db_write(users_fd, user_id, sizeof u, &u) == 0) ? STORE_OK : STORE_ERR;
+    }
+
+    db_unlock(users_fd, user_id, sizeof(User));
+    return rc;
+}
+
+int user_list_by_role(int role, User *out, int max) {
+    int count = db_count(users_fd, sizeof(User));
+    int n = 0;
+    for (int i = 1; i <= count && n < max; i++) {
+        User u;
+        if (user_get(i, &u) == 0 && u.role == role) out[n++] = u;
+    }
+    return n;
+}

@@ -42,4 +42,26 @@ int customer_create(const char *username, const char *password,
 /* Raw descriptor of accounts.dat, used by the money operations in bank_ops.c */
 int store_accounts_fd(void);
 
+
+/* ----- User management (Step 7) ----- */
+#define STORE_OK            0
+#define STORE_BAD_PASSWORD (-4)   /* old password did not match */
+#define STORE_NOT_FOUND    (-5)
+
+/* Change own password: needs the old one. */
+int user_change_password(int user_id, const char *old_pw, const char *new_pw);
+
+/* Change username and/or full name. Pass NULL to leave a field unchanged. */
+int user_update_details(int user_id, const char *new_username, const char *new_full_name);
+
+/* Admin: switch between ROLE_EMPLOYEE and ROLE_MANAGER only. */
+int user_set_role(int user_id, int new_role);
+
+/* Activate / deactivate a user. The admin account cannot be deactivated. */
+int user_set_active(int user_id, int active);
+
+/* Fill out[] with users of this role (up to max). Returns the count.
+ * NOTE: the structs include passwords, so never send them to a client. */
+int user_list_by_role(int role, User *out, int max);
+
 #endif
