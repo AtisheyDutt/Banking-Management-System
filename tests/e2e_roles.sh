@@ -73,8 +73,36 @@ OUT=$(session empa emp123 "APPROVE 1")
 check "unassigned employee cannot approve" "$OUT" "That loan is not assigned to you."
 
 echo "--- manager ---"
-OUT=$(session mgra mgr123 "BALANCE")
+OUT=$(session mgra mgr123 "LISTCUSTOMERS" "EMPLOYEES" "PENDINGLOANS" "FEEDBACKS" "LISTCUSTOMERS extra" "ASSIGN 1")
 check "manager login after promotion"     "$OUT" "Role: MANAGER."
+check "manager sees customers"            "$OUT" "frank"
+check "manager sees employees"            "$OUT" "empa"
+check "manager sees customer feedback"    "$OUT" "Great service"
+check "extra argument -> usage"           "$OUT" "Usage: LISTCUSTOMERS"
+check "ASSIGN with missing arg -> usage"  "$OUT" "Usage: ASSIGN <loan_id> <employee_user_id>"
+
+OUT=$(session mgra mgr123 "ASSIGN 1 $EMPA" "ASSIGN 999 $EMPA")
+check "assign a loan to an employee"      "$OUT" "OK"
+check "assign a missing loan refused"     "$OUT" "ERR"
+
+echo "--- loan approval, end to end ---"
+OUT=$(session empa emp123 "MYLOANS" "APPROVE 1" "APPROVE 1")
+check "assigned employee sees the loan"   "$OUT" "5000"
+check "second decision refused"           "$OUT" "That loan is not awaiting a decision."
+OUT=$(session frank frank123 "BALANCE")
+check "approved loan credited the account" "$OUT" "Balance: Rs 7000.00"
+
+echo "--- account activation ---"
+OUT=$(session mgra mgr123 "DEACTIVATE 6" "ACTIVATE 6" "DEACTIVATE abc" "DEACTIVATE 999")
+check "deactivate an account"             "$OUT" "OK"
+check "bad account number refused"        "$OUT" "Invalid account number."
+check "missing account refused"           "$OUT" "Account not found."
+OUT=$(session mgra mgr123 "DEACTIVATE 6")
+OUT=$(session frank frank123 "DEPOSIT 10")
+check "deactivated account cannot transact" "$OUT" "ERR"
+OUT=$(session mgra mgr123 "ACTIVATE 6")
+OUT=$(session frank frank123 "DEPOSIT 10")
+check "reactivated account works again"   "$OUT" "Deposited Rs 10.00"
 
 echo
 if [ $FAILS -eq 0 ]; then echo "All $TOTAL role checks passed."
