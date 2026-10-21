@@ -4,10 +4,8 @@
 *.o
 data/*.dat
 tests/test_db
-tests/test_db
 tests/test_store
 tests/test_ops
 tests/test_services
 tests/test_usermgmt
-bin/
 bin/
