@@ -19,7 +19,7 @@ should live.
 ```bash
 mkdir -p data
 ./bin/seed                       # creates the admin and five sample customers
-./bin/server [port]              # terminal 1
+./bin/server [port]              # terminal 1, default port 8080
 ./bin/client [host] [port]       # terminal 2 (menu mode), host defaults to 127.0.0.1
 BANK_RAW=1 ./bin/client          # raw protocol mode (type commands directly)
 ```
