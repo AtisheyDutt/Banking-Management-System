@@ -32,9 +32,11 @@ tests drive it.
 | Role     | Username / password |
 |----------|---------------------|
 | Admin    | `admin` / `admin123` |
+| Employee | `emp1` / `emp123` |
+| Manager  | `mgr1` / `mgr123` |
 | Customer | `alice`/`alice123`, `bob`/`bob123`, `carol`/`carol123`, `dave`/`dave123`, `erin`/`erin123` |
 
-Employees and managers are created by the admin (`ADDEMPLOYEE`, then `PROMOTE`).
+More employees and managers can be created by the admin (`ADDEMPLOYEE`, then `PROMOTE`).
 
 ## Architecture
 
@@ -103,6 +105,8 @@ All roles: `LOGIN <user> <password>`, `LOGOUT`, `QUIT`.
 | Employee | `ADDCUSTOMER <user> <pass> <opening_amt> <full name>`, `MODCUSTOMER <user_id> <username or -> <full name or ->`, `LISTCUSTOMERS`, `MYLOANS`, `APPROVE <loan_id>`, `REJECT <loan_id>`, `CUSTHISTORY <account_no>` |
 | Manager | `LISTCUSTOMERS`, `ACTIVATE <account_no>`, `DEACTIVATE <account_no>`, `PENDINGLOANS`, `EMPLOYEES`, `ASSIGN <loan_id> <employee_user_id>`, `FEEDBACKS` |
 | Admin | `ADDEMPLOYEE <user> <pass> <full name>`, `MODUSER <user_id> <username or -> <full name or ->`, `LISTUSERS <CUSTOMER, EMPLOYEE, MANAGER or ADMIN>`, `LISTCUSTOMERS`, `PROMOTE <user_id>`, `DEMOTE <user_id>`, `SETACTIVE <user_id> <0 or 1>` |
+| Employee | `emp1` / `emp123` |
+| Manager  | `mgr1` / `mgr123` |
 
 Amounts are in rupees with up to two decimals and are stored as integer paise.
 
@@ -114,6 +118,7 @@ bash tests/e2e.sh          # customer flows, one session per user, concurrent tr
 bash tests/e2e_roles.sh    # all four roles, loan workflow, account activation (38 checks)
 bash tests/stress.sh       # mixed concurrent load, money conservation, login race
 ```
+
 
 Each script starts its own server on a private port with a throwaway data
 directory in /tmp.
