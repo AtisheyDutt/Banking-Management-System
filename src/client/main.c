@@ -148,7 +148,6 @@ static void menu_mode(int fd, NetReader *r) {
             len += (size_t)snprintf(cmd + len, sizeof cmd - len, " %s", answer);
         }
         net_printf(fd, "%s\n", cmd);
-        first[0] = '\0';
         if (read_response(r, first, sizeof first, 1) < 0) { fprintf(stderr, "Server closed the connection.\n"); return; }
         if (!strcmp(it->command, "LOGOUT") && strncmp(first, "OK", 2) == 0) menu = NULL;
     }
