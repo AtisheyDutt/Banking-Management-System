@@ -17,6 +17,14 @@ static int get_txns_fd(void) {
     return txns_fd;
 }
 
+/* Separate fd for the loans file. NEVER close it: closing any fd of a file drops this
+ * process's fcntl locks on it, and loan_decide still holds the loan record lock. */
+static int loans_fd2 = -1;
+static int get_loans_fd2(void) {
+    if (loans_fd2 < 0) loans_fd2 = db_open(LOANS_FILE);
+    return loans_fd2;
+}
+
 static void make_txn(Transaction *t, int account_id, int type, long long amount,
                      long long balance_after, int other_account_id) {
     memset(t, 0, sizeof *t);
@@ -33,13 +41,13 @@ static void make_txn(Transaction *t, int account_id, int type, long long amount,
  * passbook lines (fsync) -> mark journal entry done. If the process dies at any
  * point, journal_recover() at the next start finishes the job. */
 static int durable_update(int n_acc, const int *acc_id, const Account *accs,
-                          int n_txn, const Transaction *txns) {
+                          int n_txn, const Transaction *txns, int loan_id) {
     int af = store_accounts_fd();
     long long bals[2] = { 0, 0 };
     for (int i = 0; i < n_acc; i++) bals[i] = accs[i].balance;
 
     crash_point();                                          /* 1: nothing journaled */
-    int jid = journal_begin(n_acc, acc_id, bals, n_txn, txns);
+    int jid = journal_begin(n_acc, acc_id, bals, n_txn, txns, loan_id);
     if (jid < 0) return -1;
     crash_point();                                          /* 2: journaled, nothing applied */
 
@@ -55,6 +63,14 @@ static int durable_update(int n_acc, const int *acc_id, const Account *accs,
     }
     if (tf >= 0) fsync(tf);
     crash_point();                                          /* 4: passbook lines written */
+    if (loan_id > 0) {
+        int lf = get_loans_fd2();
+        Loan ln;
+        if (lf < 0 || db_read(lf, loan_id, sizeof ln, &ln) < 0) return -1;
+        ln.status = LOAN_APPROVED;
+        if (db_write(lf, loan_id, sizeof ln, &ln) < 0) return -1;
+        fsync(lf);
+    }
 
     journal_commit(jid);
     crash_point();                                          /* 5: fully committed */
@@ -69,7 +85,7 @@ int op_balance(int account_id, long long *balance) {
 }
 
 /* Shared by deposit, withdraw and loan credit: lock, read, check, journal+write, unlock. */
-static int apply(int account_id, int type, long long amount, long long *new_balance) {
+static int apply(int account_id, int type, long long amount, long long *new_balance, int loan_id) {
     if (amount <= 0) return OP_INVALID_AMOUNT;
     if (account_id < 1) return OP_NO_ACCOUNT;
 
@@ -87,7 +103,7 @@ static int apply(int account_id, int type, long long amount, long long *new_bala
         Transaction t;
         make_txn(&t, account_id, type, amount, a.balance, 0);
         int ids[1] = { account_id };
-        if (durable_update(1, ids, &a, 1, &t) < 0) rc = OP_ERR;
+        if (durable_update(1, ids, &a, 1, &t, loan_id) < 0) rc = OP_ERR;
         else {
             if (new_balance) *new_balance = a.balance;
             rc = OP_OK;
@@ -99,11 +115,11 @@ static int apply(int account_id, int type, long long amount, long long *new_bala
 }
 
 int op_deposit(int account_id, long long amount, long long *new_balance) {
-    return apply(account_id, TXN_DEPOSIT, amount, new_balance);
+    return apply(account_id, TXN_DEPOSIT, amount, new_balance, 0);
 }
 
 int op_withdraw(int account_id, long long amount, long long *new_balance) {
-    return apply(account_id, TXN_WITHDRAW, amount, new_balance);
+    return apply(account_id, TXN_WITHDRAW, amount, new_balance, 0);
 }
 
 int op_transfer(int from_id, int to_id, long long amount) {
@@ -138,7 +154,7 @@ int op_transfer(int from_id, int to_id, long long amount) {
         make_txn(&t[1], to_id,   TXN_TRANSFER_IN,  amount, to.balance,   from_id);
         int ids[2] = { from_id, to_id };
         Account accs[2] = { from, to };
-        rc = (durable_update(2, ids, accs, 2, t) < 0) ? OP_ERR : OP_OK;
+        rc = (durable_update(2, ids, accs, 2, t, 0) < 0) ? OP_ERR : OP_OK;
     }
 
     db_unlock(fd, second, sizeof(Account));
@@ -163,5 +179,11 @@ int op_history(int account_id, Transaction *out, int max) {
 }
 
 int op_loan_credit(int account_id, long long amount) {
-    return apply(account_id, TXN_LOAN_CREDIT, amount, NULL);
+    return apply(account_id, TXN_LOAN_CREDIT, amount, NULL, 0);
+}
+
+/* Credit the account AND mark the loan APPROVED as one crash-safe step.
+ * The caller (loan_decide) holds the loan record lock. */
+int op_loan_approve_credit(int account_id, long long amount, int loan_id) {
+    return apply(account_id, TXN_LOAN_CREDIT, amount, NULL, loan_id);
 }

@@ -38,7 +38,7 @@ void crash_point(void) {
 }
 
 int journal_begin(int n_acc, const int *acc_id, const long long *acc_balance,
-                  int n_txn, const Transaction *txns) {
+                  int n_txn, const Transaction *txns, int loan_id) {
     if (n_acc < 0 || n_acc > 2 || n_txn < 0 || n_txn > 2) return -1;
     int fd = get_jfd();
     if (fd < 0) return -1;
@@ -48,6 +48,7 @@ int journal_begin(int n_acc, const int *acc_id, const long long *acc_balance,
     e.status = J_PENDING;
     e.n_acc = n_acc;
     e.n_txn = n_txn;
+    e.loan_id = loan_id;
     for (int i = 0; i < n_acc; i++) { e.acc_id[i] = acc_id[i]; e.acc_balance[i] = acc_balance[i]; }
     for (int i = 0; i < n_txn; i++) e.txn[i] = txns[i];
     e.checksum = checksum_of(&e);
@@ -106,6 +107,18 @@ int journal_recover(void) {
             if (!txn_exists(tf, &e.txn[k])) {
                 Transaction t = e.txn[k];
                 db_append(tf, sizeof t, &t);
+            }
+        }
+        if (e.loan_id > 0) {
+            int lf = db_open(LOANS_FILE);
+            Loan ln;
+            if (lf >= 0) {
+                if (db_read(lf, e.loan_id, sizeof ln, &ln) == 0) {
+                    ln.status = LOAN_APPROVED;
+                    db_write(lf, e.loan_id, sizeof ln, &ln);
+                }
+                fsync(lf);
+                close(lf);
             }
         }
         replayed++;

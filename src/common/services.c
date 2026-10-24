@@ -99,7 +99,7 @@ int loan_decide(int loan_id, int employee_id, int approve) {
         if (approve) {
             Account a;
             if (account_find_by_user(l.customer_id, &a) < 0 ||
-                op_loan_credit(a.id, l.amount) != OP_OK)
+                op_loan_approve_credit(a.id, l.amount, loan_id) != OP_OK)
                 rc = SVC_ACCOUNT_PROBLEM;           /* loan stays ASSIGNED, can be retried */
             else
                 l.status = LOAN_APPROVED;

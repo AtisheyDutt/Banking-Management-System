@@ -25,5 +25,6 @@ int op_history(int account_id, Transaction *out, int max);
 
 /* Credit an approved loan to the account (logged as TXN_LOAN_CREDIT). */
 int op_loan_credit(int account_id, long long amount);
+int op_loan_approve_credit(int account_id, long long amount, int loan_id);
 
 #endif
