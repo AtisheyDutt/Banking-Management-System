@@ -1,7 +1,7 @@
 .RECIPEPREFIX = >
 CC     = gcc
 CFLAGS = -Wall -Wextra -Iinclude -g
-COMMON = src/common/db.c src/common/store.c src/common/bank_ops.c src/common/services.c src/common/net.c
+COMMON = src/common/db.c src/common/store.c src/common/bank_ops.c src/common/services.c src/common/net.c src/common/journal.c
 
 all: bin/server bin/client bin/seed
 

@@ -11,6 +11,7 @@
 #include "common.h"
 #include "store.h"
 #include "session.h"
+#include "journal.h"
 
 int main(int argc, char **argv) {
     int port = (argc > 1) ? atoi(argv[1]) : SERVER_PORT;
@@ -24,6 +25,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);           /* writing to a closed socket gives an error, not a crash */
 
     if (store_init() < 0) return 1;
+    journal_recover();                  /* finish anything a crash left half-done */
     store_reset_sessions();
 
     int ls = socket(AF_INET, SOCK_STREAM, 0);

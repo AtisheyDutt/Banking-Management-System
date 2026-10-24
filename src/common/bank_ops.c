@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "db.h"
 #include "store.h"
+#include "journal.h"
 #include "bank_ops.h"
 
 /* The transaction log is opened on first use, once per process. */
@@ -16,21 +17,48 @@ static int get_txns_fd(void) {
     return txns_fd;
 }
 
-/* Append one passbook line. The caller still holds the account lock(s). */
-static void log_txn(int account_id, int type, long long amount,
-                    long long balance_after, int other_account_id) {
-    Transaction t;
-    memset(&t, 0, sizeof t);
-    t.account_id       = account_id;
-    t.type             = type;
-    t.amount           = amount;
-    t.balance_after    = balance_after;
-    t.other_account_id = other_account_id;
-    t.timestamp        = time(NULL);
+static void make_txn(Transaction *t, int account_id, int type, long long amount,
+                     long long balance_after, int other_account_id) {
+    memset(t, 0, sizeof *t);
+    t->account_id       = account_id;
+    t->type             = type;
+    t->amount           = amount;
+    t->balance_after    = balance_after;
+    t->other_account_id = other_account_id;
+    t->timestamp        = time(NULL);
+}
 
-    int fd = get_txns_fd();
-    if (fd < 0 || db_append(fd, sizeof t, &t) < 0)
-        fprintf(stderr, "warning: could not write transaction log\n");
+/* Crash-safe update. The caller holds the account lock(s) and has already put the
+ * final balances in accs[]. Steps: journal (fsync) -> accounts (fsync) ->
+ * passbook lines (fsync) -> mark journal entry done. If the process dies at any
+ * point, journal_recover() at the next start finishes the job. */
+static int durable_update(int n_acc, const int *acc_id, const Account *accs,
+                          int n_txn, const Transaction *txns) {
+    int af = store_accounts_fd();
+    long long bals[2] = { 0, 0 };
+    for (int i = 0; i < n_acc; i++) bals[i] = accs[i].balance;
+
+    crash_point();                                          /* 1: nothing journaled */
+    int jid = journal_begin(n_acc, acc_id, bals, n_txn, txns);
+    if (jid < 0) return -1;
+    crash_point();                                          /* 2: journaled, nothing applied */
+
+    for (int i = 0; i < n_acc; i++)
+        if (db_write(af, acc_id[i], sizeof(Account), &accs[i]) < 0) return -1;
+    fsync(af);
+    crash_point();                                          /* 3: balances written */
+
+    int tf = get_txns_fd();
+    for (int i = 0; i < n_txn; i++) {
+        Transaction t = txns[i];
+        if (tf < 0 || db_append(tf, sizeof t, &t) < 0) return -1;
+    }
+    if (tf >= 0) fsync(tf);
+    crash_point();                                          /* 4: passbook lines written */
+
+    journal_commit(jid);
+    crash_point();                                          /* 5: fully committed */
+    return 0;
 }
 
 int op_balance(int account_id, long long *balance) {
@@ -40,7 +68,7 @@ int op_balance(int account_id, long long *balance) {
     return OP_OK;
 }
 
-/* Shared by deposit and withdraw: lock, read, check, write, log, unlock. */
+/* Shared by deposit, withdraw and loan credit: lock, read, check, journal+write, unlock. */
 static int apply(int account_id, int type, long long amount, long long *new_balance) {
     if (amount <= 0) return OP_INVALID_AMOUNT;
     if (account_id < 1) return OP_NO_ACCOUNT;
@@ -56,9 +84,11 @@ static int apply(int account_id, int type, long long amount, long long *new_bala
     else if ((type == TXN_DEPOSIT || type == TXN_LOAN_CREDIT) && amount > LLONG_MAX - a.balance)        rc = OP_INVALID_AMOUNT;
     else {
         a.balance += ((type == TXN_DEPOSIT || type == TXN_LOAN_CREDIT)) ? amount : -amount;
-        if (db_write(fd, account_id, sizeof a, &a) < 0) rc = OP_ERR;
+        Transaction t;
+        make_txn(&t, account_id, type, amount, a.balance, 0);
+        int ids[1] = { account_id };
+        if (durable_update(1, ids, &a, 1, &t) < 0) rc = OP_ERR;
         else {
-            log_txn(account_id, type, amount, a.balance, 0);
             if (new_balance) *new_balance = a.balance;
             rc = OP_OK;
         }
@@ -103,14 +133,12 @@ int op_transfer(int from_id, int to_id, long long amount) {
     else {
         from.balance -= amount;
         to.balance   += amount;
-        if (db_write(fd, from_id, sizeof from, &from) < 0 ||
-            db_write(fd, to_id,   sizeof to,   &to)   < 0) {
-            rc = OP_ERR;
-        } else {
-            log_txn(from_id, TXN_TRANSFER_OUT, amount, from.balance, to_id);
-            log_txn(to_id,   TXN_TRANSFER_IN,  amount, to.balance,   from_id);
-            rc = OP_OK;
-        }
+        Transaction t[2];
+        make_txn(&t[0], from_id, TXN_TRANSFER_OUT, amount, from.balance, to_id);
+        make_txn(&t[1], to_id,   TXN_TRANSFER_IN,  amount, to.balance,   from_id);
+        int ids[2] = { from_id, to_id };
+        Account accs[2] = { from, to };
+        rc = (durable_update(2, ids, accs, 2, t) < 0) ? OP_ERR : OP_OK;
     }
 
     db_unlock(fd, second, sizeof(Account));
